@@ -28,3 +28,6 @@ frontend/cypress/screenshots/
 
 # compat stack rendered config
 deploy/ci/.rendered/
+
+# Local hermetic build snapshots and dependency caches
+.cache/konflux-build/

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["tekton", "custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the digest-pinned Konflux base images; language dependencies follow upstream",
+      "managerFilePatterns": ["/^deploy/Dockerfile\\.konflux$/"],
+      "matchStrings": [
+        "(?:^|\\r?\\n)ARG [A-Z_]+_IMAGE=(?<depName>[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Automerge non-major dependency updates",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest", "lockFileMaintenance"],
+      "automerge": true
+    }
+  ]
+}
