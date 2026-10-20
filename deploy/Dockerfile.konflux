@@ -1,7 +1,7 @@
 # Konflux prefetches npm and Go dependencies and injects their environment
 # into RUN instructions. For local hermetic builds, use deploy/konflux/build-local.sh.
 # Base images are digest-pinned and maintained by Renovate/MintMaker.
-ARG NODE_IMAGE=registry.access.redhat.com/ubi9/nodejs-22:1-1790265744@sha256:510a73eeff392500e22eadf976686dbd16c27eaa1a8808f8f51b29fec950f68c
+ARG NODE_IMAGE=registry.access.redhat.com/ubi9/nodejs-22:9.8-1792441643@sha256:1d423d9a54713c59859c77f35ae7d2e61d330993aa4f28fe979c920038c4c867
 ARG GO_IMAGE=registry.access.redhat.com/ubi9/go-toolset:1.26@sha256:0a4666f7a4eb0644c97a73cba198eb268691b270d97831822689e7a2088f87be
 ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:1d7c5517a4a1a8e2688620b39ee980e82505ca1ab7ae5541b5463120ae9b3897
 
