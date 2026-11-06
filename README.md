@@ -56,11 +56,11 @@ Install the chart:
 
 ```sh
 helm upgrade --install openshell-dashboard \
-  oci://ghcr.io/gkrumbach07/openshell-dashboard/helm-chart/openshell-dashboard \
+  oci://ghcr.io/ai-openshell/console/helm-chart/openshell-dashboard \
   --version <dashboard version> --namespace openshell -f values.yaml
 ```
 
-`<dashboard version>` is the newest dashboard release whose first two numbers match your gateway's: a `0.1.N` for a gateway `0.1.x` ([Compatibility](#compatibility), [releases](https://github.com/Gkrumbach07/openshell-dashboard/releases)).
+`<dashboard version>` is the newest dashboard release whose first two numbers match your gateway's: a `0.1.N` for a gateway `0.1.x` ([Compatibility](#compatibility), [releases](https://github.com/ai-openshell/console/releases)).
 
 Then open `https://dashboard.example.com` and sign in. The [install guide](docs/install.md) has every step: Keycloak, the gateway's settings, OpenShift, sign-out and workspace membership.
 
@@ -70,8 +70,8 @@ A dashboard release is for one minor release line of the OpenShell gateway: ever
 
 | Your gateway | Dashboard | Container image |
 |---|---|---|
-| `0.1.x` | `0.1.x` | `quay.io/gkrumbach07/openshell-dashboard:0.1` for the newest release of the line, or an exact `:0.1.N` |
-| `0.0.116` | the [`gateway-0.0.116`](https://github.com/Gkrumbach07/openshell-dashboard/releases/tag/gateway-0.0.116) release | `quay.io/gkrumbach07/openshell-dashboard:gateway-0.0.116` |
+| `0.1.x` | `0.1.x` | `ghcr.io/ai-openshell/console:0.1` for the newest release of the line, or an exact `:0.1.N`. Releases up to `0.1.3` are at `quay.io/gkrumbach07/openshell-dashboard` |
+| `0.0.116` | the [`gateway-0.0.116`](https://github.com/ai-openshell/console/releases/tag/gateway-0.0.116) release | `quay.io/gkrumbach07/openshell-dashboard:gateway-0.0.116` |
 
 `gateway-0.0.116` is a one-off build for gateway `0.0.116` only. It sits outside the version numbering, and no further release is planned for it.
 
@@ -81,8 +81,8 @@ This branch is built on:
 | | |
 |---|---|
 | Supported gateways | `0.1.x` |
-| Tested on | `0.1.5` |
-| OpenShell Go SDK | `v0.0.0-20261020123705-bdb956f2cd65` |
+| Tested on | `0.1.6` |
+| OpenShell Go SDK | `v0.0.0-20261027154453-ac7f615cd12d` |
 <!-- gateway-range:end -->
 
 [docs/compatibility.md](docs/compatibility.md) says what the dashboard shows when the gateway is on another line, and how the claim is tested.

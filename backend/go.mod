@@ -1,9 +1,9 @@
-module github.com/Gkrumbach07/openshell-dashboard/backend
+module github.com/ai-openshell/console/backend
 
 go 1.26.7
 
 require (
-	github.com/NVIDIA/OpenShell/sdk/go v0.0.0-20261020123705-bdb956f2cd65
+	github.com/NVIDIA/OpenShell/sdk/go v0.0.0-20261027154453-ac7f615cd12d
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	google.golang.org/grpc v1.83.2
