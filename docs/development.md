@@ -72,7 +72,7 @@ make build
 docker run --rm -p 8080:8080 \
   -e OPENSHELL_GATEWAY_URL=https://gateway.example.com:17670 \
   -e AUTH_DISABLED=true \
-  openshell-dashboard:latest
+  console:latest
 ```
 
 A gateway with a private CA or a client certificate also needs the files mounted and the [TLS](configuration.md#tls) variables set. This build passes no build arguments, so the image's `gateway.line` and `sdk` labels are empty and **Help → About** shows no commit. The compatibility notice still works: the release line is compiled into the BFF.
@@ -125,4 +125,4 @@ const features = useFeatureFlags();
 
 ## Branches and the pinned OpenShell release
 
-A branch is built on one OpenShell release, which `deploy/ci/gateway-pins.json` names: `main` on a stable release, `next` on the upcoming one. Which branch a change goes to is in [CONTRIBUTING.md](../CONTRIBUTING.md#where-a-pull-request-goes), and how the pinned release moves is in [`deploy/ci/upstream/README.md`](../deploy/ci/upstream/README.md).
+A branch is built on one OpenShell release, which `deploy/ci/gateway-pins.json` names: `main` on a stable release, a bump branch (`bump/openshell-X.Y.Z`) on the release it moves to. Which branch a change goes to is in [CONTRIBUTING.md](../CONTRIBUTING.md#where-a-pull-request-goes), and how the pinned release moves is in [`deploy/ci/upstream/README.md`](../deploy/ci/upstream/README.md).

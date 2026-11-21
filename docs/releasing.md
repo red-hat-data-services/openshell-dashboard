@@ -1,6 +1,6 @@
 # Releasing
 
-A release is started by a person. Nobody chooses its version: it is worked out from the OpenShell release the branch is built on and the release tags that exist. Merging to `main` releases nothing, whatever the pull request is titled, with one exception: the merge of `next`, the move to a new OpenShell release ([The one automatic release](#the-one-automatic-release)).
+A release is started by a person. Nobody chooses its version: it is worked out from the OpenShell release the branch is built on and the release tags that exist. Merging to `main` releases nothing, whatever the pull request is titled, the move to a new OpenShell release included ([After a bump is merged](#after-a-bump-is-merged)).
 
 ## One version, three artifacts
 
@@ -9,10 +9,37 @@ A release `vX.Y.Z` is three things, all made by `publish.yml`:
 | Artifact | Where | Made by |
 |---|---|---|
 | GitHub release `vX.Y.Z`, and the git tag with it | this repository | `scripts/release/cut-release.mjs` |
-| Container image tags `X.Y.Z` and `X.Y` | `ghcr.io/ai-openshell/console` | retagging the image CI already built |
-| Helm chart `openshell-dashboard`, version `X.Y.Z` | `oci://ghcr.io/ai-openshell/console/helm-chart` | packaging the chart at the released commit |
+| Container image tags `X.Y.Z` and `X.Y` | `quay.io/ai-openshell/console` | retagging the image CI already built |
+| Helm chart `console`, version `X.Y.Z` | `oci://quay.io/ai-openshell/charts` | packaging the chart at the released commit |
 
-The chart's registry path follows the repository's name (`publish.yml` pushes to `oci://ghcr.io/<owner>/<repository>/helm-chart`), so a package created under a new name starts out private: make it public in the organization's package settings before announcing the release. Releases up to `0.1.2` are at `oci://ghcr.io/gkrumbach07/openshell-dashboard/helm-chart`, the path before the repository moved to `ai-openshell/console`; nothing is published there any more. The image moved the same way: releases up to `0.1.3` are at `quay.io/gkrumbach07/openshell-dashboard`, and CI pushes every newer image to `ghcr.io/ai-openshell/console` with the workflow's own token, so no registry secret is needed. That package also starts out private.
+Charts go to `oci://quay.io/ai-openshell/charts`, and Helm adds the chart's name, so this chart lands in the Quay repository `charts/console`, beside the image's `console`. It is a repository of its own, with its own visibility and permissions: a chart cannot share the image's repository, because chart version `X.Y.Z` and image tag `X.Y.Z` would be the same tag. Another repository's chart goes to `charts/<its name>`.
+
+Earlier homes, which receive no new release: images up to `0.1.3` are at `quay.io/gkrumbach07/openshell-dashboard`, and charts up to `0.1.2` at `oci://ghcr.io/gkrumbach07/openshell-dashboard/helm-chart`. Between the move to `ai-openshell/console` and the move to Quay, CI pushed development images to `ghcr.io/ai-openshell/console`, which was never made public.
+
+## Who can write to quay.io
+
+No registry secret is stored anywhere, and the workflow's own token cannot write any registry (no job asks for `packages: write`). A job that publishes signs in with the [quay-login action](https://github.com/ai-openshell/workflows/tree/main/quay-login) from `ai-openshell/workflows` (pinned by commit), which asks GitHub for the job's OIDC token and trades it at Quay's robot federation endpoint (`https://quay.io/oauth2/federation/robot/token`) for a robot token that lasts one hour. Quay gives a robot's token only to a GitHub token whose issuer and subject the robot trusts, compared exactly. There is one robot, and it trusts one GitHub environment:
+
+| Environment | Who may use it | Robot, and the subject it trusts | It can write | Used by |
+|---|---|---|---|---|
+| `release` | `main` and `release/**` only | `ai-openshell+console_release`, `repo:ai-openshell@311201172/console@1316331667:environment:release` | `console` and `charts/console` | `ci.yml` on a push (`build`, `push-manifest`, `promote-latest`, `publish-dev-chart`) and `publish.yml` (`tag-image`, `publish-chart`) |
+
+The repository uses GitHub's immutable subject claims, so the subject starts with the owner and the repository each followed by its numeric ID, not with `repo:ai-openshell/console`. A robot set up with the name-only subject refuses every exchange with `Token does not match robot`. The IDs keep the subject from matching a repository that takes the name later, after a rename or a deletion. To read the prefix GitHub uses: `gh api repos/ai-openshell/console/actions/oidc/customization/sub` (`sub_claim_prefix`).
+
+The environment is what makes the subject mean something: GitHub puts `environment:release` in the token only for a job the environment admitted, so its deployment branches must stay `main` and `release/**`. A variable `QUAY_ROBOT` on an environment overrides the robot's name.
+
+A pull request never publishes to `console`, even one that edits a workflow: it runs with no environment, so its token's subject is `repo:ai-openshell@311201172/console@1316331667:pull_request`, which no robot trusts. It does not write the build cache that `main`'s build, and so a release, reads. `image-range` reads the pushed image anonymously, so the Quay repositories must be public.
+
+**A pull request gets no image.** It is built on both platforms, to prove that it builds, and then discarded. To try a change on a cluster, build the image locally (`make build`) and push it to a registry of your own.
+
+**Setting it up on quay.io** (an owner of the `ai-openshell` organization):
+
+1. Create the public repositories `console` and `charts/console`.
+2. Create the robot `console_release` with write on `console` and the chart and nothing else, and leave the organization's default permissions empty.
+3. On the robot, *Set robot federation* with the issuer `https://token.actions.githubusercontent.com`, the subject in the table above and the audience `quay`, which is what the quay-login action asks GitHub for by default (its `audience` input overrides it). Quay refuses a token whose audience the robot does not list.
+4. Optionally, an immutability policy on `console` for the tags `^[0-9]+\.[0-9]+\.[0-9]+$` and `^sha-`, so a release or a build cannot be overwritten. `latest` and `X.Y` are meant to move.
+
+Every action in `ci.yml`, `publish.yml` and `follow-upstream.yml` is pinned by commit SHA, because those jobs can publish.
 
 The BFF and the UI ship together and share the version.
 
@@ -65,19 +92,24 @@ Once `main` has moved to a new gateway minor, the line before it gets critical a
 gh workflow run publish.yml --ref release/0.1 -f dry_run=true
 ```
 
-Nothing is released from a release branch automatically, and three things differ:
+Three things differ:
 
 - **Only that line's `X.Y` image tag moves.** `latest` and the tag of `main`'s line do not.
 - **The branch has to pin its own line.** `release/0.1` with a pin on `0.2` is refused.
-- **The commit has to contain the newest release of its line.** The [Follow upstream](../.github/workflows/follow-upstream.yml) workflow creates `release/X.Y` from `main` before `next` merges, so for a while both are on one line. A release cut from `main` in the meantime is missing from the branch, and a release from the branch would be numbered above it without containing it. The run says so; merge that release into the branch first.
+- **The commit has to contain the newest release of its line.** A person creates `release/X.Y` from `main` before the bump to the next minor merges ([After a bump is merged](#after-a-bump-is-merged)), so for a while both are on one line. A release cut from `main` in the meantime is missing from the branch, and a release from the branch would be numbered above it without containing it. The run says so; merge that release into the branch first.
 
-### The one automatic release
+### After a bump is merged
 
-`main` moves to a new OpenShell release by merging `next`, which the [Follow upstream](../.github/workflows/follow-upstream.yml) workflow keeps one commit, the pin move, ahead of `main` ([ADR 0005](adrs/0005-gateway-compatibility-and-releases.md), decisions 7 and 8; [`deploy/ci/upstream/README.md`](../deploy/ci/upstream/README.md)). That merge changes what the next release is built on, and is the release most likely to be forgotten. So once it is merged and CI has passed on `main`, `publish.yml` releases it without being asked. Merge that pull request with *Rebase and merge*, so its commits land on `main` as they are.
+`main` moves to a new OpenShell release by merging a bump pull request, `bump/openshell-X.Y.Z`, which the [Follow upstream](../.github/workflows/follow-upstream.yml) workflow opens ([ADR 0005](adrs/0005-gateway-compatibility-and-releases.md), amendment of 2026-11-06; [`deploy/ci/upstream/README.md`](../deploy/ci/upstream/README.md)). The merge releases nothing. It changes what the next release is built on, so cut one once CI has passed on `main`, the same way as any other.
 
-Which commits qualify is decided from where they came from, never from their title ([`scripts/release/next-merge.mjs`](../scripts/release/next-merge.mjs)): the commit was merged into `main` by a pull request whose head was the branch `next` **in this repository**. A fork's branch of that name does not count, and neither does a pull request *into* `next`. Anything else is released by hand.
+Before merging a bump that starts a new gateway minor, create the release branch of the line `main` is leaving, if that line still needs patch releases:
 
-Its version is worked out the same way, and it carries every commit since the last release, including work people put on `next` because it needed the new gateway. It follows the merge only if CI passes for the commit `main` ends up on; if a second merge cancels that run, cut the release by hand.
+```sh
+git fetch origin
+git push origin origin/main:refs/heads/release/0.1
+```
+
+Nothing creates it for you.
 
 ## The pipeline
 
@@ -97,7 +129,7 @@ ci.yml ── build ──► push-manifest ────────────
    │                           └──► publish-dev-chart ──► chart 0.0.0-dev  (appVersion sha-<7>)
    │
    ▼
-publish.yml   started by a person, on main or release/X.Y   (or: CI passed for the merge of next)
+publish.yml   started by a person, on main or release/X.Y
    │
    ├── cut-release.mjs ── version = <pinned line>.<next patch>
    │        └── GitHub release vX.Y.Z ─────────► git tag vX.Y.Z
@@ -107,7 +139,7 @@ publish.yml   started by a person, on main or release/X.Y   (or: CI passed for t
 ```
 
 - **The image is built once.** `scripts/retag-image.sh` adds `latest`, `X.Y.Z` and `X.Y` later, by pointing the tag at the digest of `sha-<7>`, so a released image is byte for byte the one CI built for the commit that passed.
-- **`latest` waits for everything.** `sha-<7>` and `pr-<n>` are pushed when the build finishes. `latest` moves after every job in `ci.yml` has passed on `main`.
+- **`latest` waits for everything.** `sha-<7>` is pushed when the build of a push finishes. `latest` moves after every job in `ci.yml` has passed on `main`.
 - **`latest` only moves forward, and no release moves it.** A run can be re-run for thirty days and keeps its commit, so `promote-latest` first checks that the commit is still the tip of `main` (`scripts/branch-tip.sh`), and otherwise succeeds without touching the registry.
 - **A version is written once.** `retag-image.sh` refuses to point an existing `X.Y.Z` at another digest, and `publish-chart` leaves an existing chart version untouched. `X.Y`, `latest` and the development chart `0.0.0-dev` are meant to move.
 
@@ -138,10 +170,10 @@ A running dashboard shows no version number: the image is built before a release
 
 **`Cut the release` refuses.** It says why, and nothing was created:
 
-- *The branch pins a pre-release.* Only `next` does; the release is cut after `next` has moved to the stable release and merged.
+- *The branch pins a pre-release.* Only a prep bump branch does, and it is not released; the release is cut after the bump to the stable release has merged.
 - *The release branch pins another line than its own.*
 - *The newest release of the line is not in this commit's history.* Either this is a second run for an old commit, and there is nothing to do, or `main` released past this release branch ([The line before `main`'s](#the-line-before-mains)).
-- *A counted release tag was not built for the line* (a real run only). Delete the tag and re-run the run; the merge of `next` is stopped and re-run the same way.
+- *A counted release tag was not built for the line* (a real run only). Delete the tag and re-run the run.
 
 **`Cut the release` failed while creating the release.** `gh`'s message is in the log. The release and its tag are created in one request, so *Re-run all jobs* either cuts the release or finds the tag and carries on.
 
@@ -157,7 +189,7 @@ A running dashboard shows no version number: the image is built before a release
 
 **`promote-latest` failed.** `latest` stays on the previous good commit and CI is red, so nothing is published. Re-run the job. If `main` has moved on, the re-run stands down and the newer commit's run promotes its own image.
 
-**An older run of `main` is re-run.** It cannot move `latest`. If its commit was merged from `next` and never released, it is released now, unless the line has a newer release that the commit does not contain; then the run is refused. CI runs on `main` share a concurrency group that cancels the run in progress, so the re-run cancels the newest run if that is still going, and its commit is neither promoted nor released until its own run is re-run.
+**An older run of `main` is re-run.** It cannot move `latest`, and it releases nothing. CI runs on `main` share a concurrency group that cancels the run in progress, so the re-run cancels the newest run if that is still going, and its commit is not promoted until its own run is re-run.
 
 ## Testing the release tooling
 
