@@ -37,15 +37,20 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const PINS_FILE = 'deploy/ci/gateway-pins.json';
 export const PINS_PATH = join(repoRoot, PINS_FILE);
 export const GO_MOD_PATH = join(repoRoot, 'backend', 'go.mod');
-export const SDK_MODULE = 'github.com/NVIDIA/OpenShell/sdk/go';
+// The Go SDK's own module (ai-openshell/sdk-go), and the path it had inside the
+// core repository until OpenShell 0.1.8. A go.mod still on the old path is
+// moved off it by the next Follow upstream bump.
+export const SDK_MODULE = 'github.com/ai-openshell/sdk-go';
+export const LEGACY_SDK_MODULE = 'github.com/NVIDIA/OpenShell/sdk/go';
 // Where the BFF's built-in line is written, and the name it is written under.
 export const LINE_SOURCE_FILE = 'backend/pkg/models/gateway_release_line.go';
 export const LINE_SOURCE_PATH = join(repoRoot, LINE_SOURCE_FILE);
 export const LINE_CONSTANT = 'BuiltInGatewayReleaseLine';
 
 // What a branch may pin: a stable release X.Y.Z, or a pre-release X.Y.Z-pre.N.
-// Only `next` pins a pre-release, and CI refuses one in a pull request into
-// any other branch (deploy/ci/upstream/follow.py require-stable). Upstream
+// Only a bump branch prepared ahead of an upstream release pins a
+// pre-release, and CI refuses one in every pull request
+// (deploy/ci/upstream/follow.py require-stable), so it never merges. Upstream
 // also publishes dev builds (0.1.3-dev.84); a dev gateway pulls a moving
 // sandbox image at runtime, so nothing is ever declared to be tested on one.
 const RELEASE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-pre\.(0|[1-9]\d*))?$/;
@@ -64,7 +69,7 @@ export function deriveGatewayLine(pins) {
   if (typeof release !== 'string' || !RELEASE.test(release)) {
     throw new Error(
       `"release" is ${JSON.stringify(release)}, which is not an OpenShell release ` +
-        '(X.Y.Z, or X.Y.Z-pre.N on next). A release line can only be declared from the ' +
+        '(X.Y.Z, or X.Y.Z-pre.N on a bump branch). A release line can only be declared from the ' +
         'release this branch is built on; a dev build is never pinned.',
     );
   }
@@ -111,12 +116,14 @@ export function readGatewayLine(pinsPath = PINS_PATH) {
 /** The SDK version backend/go.mod actually builds against. */
 export function sdkInGoMod(goModPath = GO_MOD_PATH) {
   const goMod = readFileSync(goModPath, 'utf8');
-  const escaped = SDK_MODULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = goMod.match(new RegExp(`^\\s*(?:require\\s+)?${escaped}\\s+(\\S+)`, 'm'));
-  if (!match) {
-    throw new Error(`${goModPath} does not require ${SDK_MODULE}`);
+  for (const module of [SDK_MODULE, LEGACY_SDK_MODULE]) {
+    const escaped = module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = goMod.match(new RegExp(`^\\s*(?:require\\s+)?${escaped}\\s+(\\S+)`, 'm'));
+    if (match) {
+      return match[1];
+    }
   }
-  return match[1];
+  throw new Error(`${goModPath} does not require ${SDK_MODULE} (nor ${LEGACY_SDK_MODULE}, its old path)`);
 }
 
 /** The release line compiled into the BFF, as its Go source states it. */
@@ -155,7 +162,7 @@ function check(declared, pinsPath) {
         `  If the gateway started a new minor release line and this branch is moving to it, set ` +
         `${LINE_CONSTANT} = ${JSON.stringify(declared.line)} in the same change that moves the pin, ` +
         'and run `node scripts/readme-gateway-range.mjs --write`. The Follow upstream workflow does ' +
-        'both when it moves `next`. Moving to a new line is a minor release of the dashboard (ADR 0005).\n' +
+        'both in the bump it opens. Moving to a new line is a minor release of the dashboard (ADR 0005).\n' +
         '  If the pin moved by mistake, move it back: a patch release of the gateway never changes the line.',
     );
   }
@@ -169,8 +176,9 @@ function check(declared, pinsPath) {
   if (sdk !== declared.sdk) {
     throw new Error(
       `${pinsPath} says "sdk": ${JSON.stringify(declared.sdk)}, but backend/go.mod builds against ${sdk}. ` +
-        'The sdk field must equal the SDK version in backend/go.mod: the SDK at the commit upstream ' +
-        `tagged ${declared.release} with. Bring the stale one of the two in line.`,
+        'The sdk field must equal the SDK version in backend/go.mod: the SDK for the pinned release ' +
+        `(${SDK_MODULE} v${declared.release}, or upstream tagged ${declared.release} with on the old path). ` +
+        'Bring the stale one of the two in line.',
     );
   }
 }

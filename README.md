@@ -22,8 +22,8 @@ The dashboard is installed with its Helm chart, in the namespace of the gateway 
 Create the Secret the auth proxy reads:
 
 ```sh
-kubectl -n openshell create secret generic openshell-dashboard-oidc \
-  --from-literal=client-secret='<client secret of the openshell-dashboard client>' \
+kubectl -n openshell create secret generic console-oidc \
+  --from-literal=client-secret='<client secret of the console client>' \
   --from-literal=cookie-secret="$(openssl rand -hex 16)"
 ```
 
@@ -55,8 +55,8 @@ networkPolicy:
 Install the chart:
 
 ```sh
-helm upgrade --install openshell-dashboard \
-  oci://ghcr.io/ai-openshell/console/helm-chart/openshell-dashboard \
+helm upgrade --install console \
+  oci://quay.io/ai-openshell/charts/console \
   --version <dashboard version> --namespace openshell -f values.yaml
 ```
 
@@ -70,7 +70,7 @@ A dashboard release is for one minor release line of the OpenShell gateway: ever
 
 | Your gateway | Dashboard | Container image |
 |---|---|---|
-| `0.1.x` | `0.1.x` | `ghcr.io/ai-openshell/console:0.1` for the newest release of the line, or an exact `:0.1.N`. Releases up to `0.1.3` are at `quay.io/gkrumbach07/openshell-dashboard` |
+| `0.1.x` | `0.1.x` | `quay.io/ai-openshell/console:0.1` for the newest release of the line, or an exact `:0.1.N`. Releases up to `0.1.3` are at `quay.io/gkrumbach07/openshell-dashboard` |
 | `0.0.116` | the [`gateway-0.0.116`](https://github.com/ai-openshell/console/releases/tag/gateway-0.0.116) release | `quay.io/gkrumbach07/openshell-dashboard:gateway-0.0.116` |
 
 `gateway-0.0.116` is a one-off build for gateway `0.0.116` only. It sits outside the version numbering, and no further release is planned for it.
@@ -81,8 +81,8 @@ This branch is built on:
 | | |
 |---|---|
 | Supported gateways | `0.1.x` |
-| Tested on | `0.1.6` |
-| OpenShell Go SDK | `v0.0.0-20261027154453-ac7f615cd12d` |
+| Tested on | `0.1.9` |
+| OpenShell Go SDK | `v0.1.9` |
 <!-- gateway-range:end -->
 
 [docs/compatibility.md](docs/compatibility.md) says what the dashboard shows when the gateway is on another line, and how the claim is tested.
@@ -106,7 +106,7 @@ gateway does not return a total count.
 - [Architecture](docs/architecture.md): components, principles, roles
 - [Releasing](docs/releasing.md): how a release is cut and numbered
 - [Decision records](docs/adrs/README.md)
-- [Helm chart](deploy/helm/openshell-dashboard/README.md): every chart value
+- [Helm chart](deploy/helm/console/README.md): every chart value
 
 ## Development
 
