@@ -639,14 +639,11 @@ class CiTestsThePinnedGateway(unittest.TestCase):
         for job in ("stable-release", "compat", "release-tooling", "check-backend"):
             self.assertIn("        %s," % job, needs)
 
-    def test_a_pull_request_from_this_repository_gets_its_images(self):
-        # The build and its manifest are not limited by base branch; only by
-        # the head being in this repository, which is what has the registry login.
-        for name in ("build", "push-manifest"):
-            text = "\n".join(CI_ALL_JOBS[name])
-            self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", text)
-            self.assertNotIn("base_ref", text)
-        self.assertIn("type=ref,event=pr,prefix=pr-", "\n".join(CI_ALL_JOBS["push-manifest"]))
+    def test_nothing_publishes_from_a_pull_request_but_the_pr_image_job(self):
+        self.assertIn("      PUBLISH_IMAGE: ${{ github.event_name == 'push' }}", CI_ALL_JOBS["build"])
+        for name in ("push-manifest", "image-range"):
+            self.assertIn("    if: github.event_name == 'push'", CI_ALL_JOBS[name], name)
+        self.assertNotIn("event=pr", "\n".join(CI_ALL_JOBS["push-manifest"]))
 
 
 class TheSweepIsRetired(unittest.TestCase):
@@ -702,6 +699,113 @@ class StackScript(unittest.TestCase):
         # A version asked for by name wins over the pins.
         asked = STACK.index('if [ -n "${OPENSHELL_VERSION:-}" ]; then')
         self.assertLess(asked, STACK.index('default_gateway="$(pinned gateway_image)"'))
+
+
+
+def job_environment(lines):
+    for line in lines:
+        m = re.match(r"^    environment:\s*(.+)$", line)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def code(lines):
+    """A job's lines without its comments (the comment above a job is read as the previous job's)."""
+    return "\n".join(line for line in lines if not line.lstrip().startswith("#"))
+
+
+class Publishing(unittest.TestCase):
+    """quay.io is written only by a robot whose token a job earns from its environment.
+
+    No registry secret is stored: the quay-login action (ai-openshell/workflows)
+    trades the job's GitHub OIDC token for a one-hour robot token, and each robot
+    trusts exactly one environment's subject (docs/releasing.md).
+    """
+
+    LOGIN = "ai-openshell/workflows/quay-login@"
+
+    ALL = [("ci.yml", name, lines) for name, lines in CI_ALL_JOBS.items()] + [
+        ("publish.yml", name, lines) for name, lines in jobs(PUBLISH).items()
+    ]
+
+    def test_no_job_lets_the_workflow_token_write_packages(self):
+        for workflow, name, lines in self.ALL:
+            self.assertNotEqual((permissions(lines) or {}).get("packages"), "write", "%s %s" % (workflow, name))
+
+    def test_no_registry_secret_is_read_and_no_registry_is_logged_in_to_another_way(self):
+        for text in (CI, PUBLISH):
+            self.assertNotIn("GHCR_", text)
+            self.assertNotIn("docker/login-action", text)
+            self.assertNotIn("ghcr.io/ai-openshell", text)
+
+    def test_every_job_that_signs_in_is_in_an_environment_as_its_robot(self):
+        signers = {}
+        for workflow, name, lines in self.ALL:
+            text = code(lines)
+            if self.LOGIN in text:
+                robot = re.search(r"robot: \$\{\{ vars\.QUAY_ROBOT \|\| '([^']+)' \}\}", text)
+                self.assertIsNotNone(robot, "%s %s names no robot" % (workflow, name))
+                self.assertEqual(len(set(re.findall(r"vars\.QUAY_ROBOT \|\| '([^']+)'", text))), 1, name)
+                signers["%s %s" % (workflow, name)] = (job_environment(lines), robot.group(1))
+        release = ("release", "ai-openshell+console_release")
+        self.assertEqual(
+            signers,
+            {
+                "ci.yml build": ("${{ github.event_name == 'push' && 'release' || '' }}", "ai-openshell+console_release"),
+                "ci.yml push-manifest": release,
+                "ci.yml promote-latest": release,
+                "ci.yml publish-dev-chart": release,
+                "publish.yml tag-image": release,
+                "publish.yml publish-chart": release,
+            },
+        )
+
+    def test_only_the_jobs_that_sign_in_can_ask_for_an_oidc_token(self):
+        for workflow, name, lines in self.ALL:
+            asks = (permissions(lines) or {}).get("id-token") == "write"
+            signs = self.LOGIN in code(lines)
+            self.assertEqual(asks, signs, "%s %s" % (workflow, name))
+
+    def test_the_build_signs_in_only_on_a_push(self):
+        login = [s for s in steps(CI_ALL_JOBS["build"]) if (s["uses"] or "").startswith(self.LOGIN)]
+        self.assertEqual(len(login), 1)
+        self.assertIn("        if: env.PUBLISH_IMAGE == 'true'", login[0]["lines"])
+
+    def test_each_login_signs_in_the_client_its_job_pushes_with(self):
+        clients = {}
+        for workflow, name, lines in self.ALL:
+            for step in steps(lines):
+                if (step["uses"] or "").startswith(self.LOGIN):
+                    found = [l.split("clients:", 1)[1].strip() for l in step["lines"] if l.strip().startswith("clients:")]
+                    clients["%s %s" % (workflow, name)] = found[0] if found else None
+        self.assertEqual(
+            clients,
+            {
+                "ci.yml build": "docker",
+                "ci.yml push-manifest": "docker",
+                "ci.yml promote-latest": "docker",
+                "ci.yml publish-dev-chart": "helm",
+                "publish.yml tag-image": "docker",
+                "publish.yml publish-chart": "helm",
+            },
+        )
+
+    def test_a_pull_request_writes_no_cache_a_release_reads(self):
+        build = "\n".join(CI_ALL_JOBS["build"])
+        self.assertIn("cache-to: ${{ github.event_name == 'push' && format(", build)
+
+    def test_a_pull_request_gets_no_image_and_nothing_runs_on_pull_request_target(self):
+        self.assertNotIn("pr-image", CI_ALL_JOBS)
+        self.assertNotIn("console-dev", CI)
+        code = "\n".join(line for line in CI.splitlines() if not line.lstrip().startswith("#"))
+        self.assertNotIn("pull_request_target", code)
+
+    def test_every_action_in_ci_and_publish_is_pinned_by_sha(self):
+        for workflow, name, lines in self.ALL:
+            for step in steps(lines):
+                if step["uses"]:
+                    self.assertRegex(step["uses"], PINNED, "%s %s" % (workflow, name))
 
 
 if __name__ == "__main__":
